@@ -1,5 +1,6 @@
 const Job = require('../models/Job');
 const JobApplication = require('../models/JobApplication');
+const Notification = require('../models/Notification');
 
 // @desc    Get all jobs
 // @route   GET /api/jobs
@@ -215,6 +216,16 @@ exports.applyForJob = async (req, res) => {
     job.applicationsCount += 1;
     await job.save();
 
+    // Create notification for student
+    await Notification.create({
+      user: req.user.id,
+      title: 'Application Submitted',
+      message: `Your application for ${job.title} at ${job.company} has been submitted successfully.`,
+      type: 'application',
+      relatedApplication: application._id,
+      relatedJob: job._id
+    });
+
     await application.populate('job', 'title company');
     await application.populate('student', 'name email');
 
@@ -369,6 +380,148 @@ exports.updateApplicationStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating application status',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get my jobs (for employer)
+// @route   GET /api/jobs/my-jobs
+// @access  Private (employer)
+exports.getMyJobs = async (req, res) => {
+  try {
+    const jobs = await Job.find({ employer: req.user.id })
+      .populate('employer', 'name company')
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: jobs.length,
+      data: jobs
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching jobs',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get all applications for employer's jobs
+// @route   GET /api/jobs/applications/employer
+// @access  Private (employer)
+exports.getEmployerApplications = async (req, res) => {
+  try {
+    // Find all jobs by this employer
+    const jobs = await Job.find({ employer: req.user.id }).select('_id');
+    const jobIds = jobs.map(job => job._id);
+
+    // Get all applications for these jobs
+    const applications = await JobApplication.find({ job: { $in: jobIds } })
+      .populate('job', 'title company location type')
+      .populate('student', 'name email phone program cgpa skills')
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: applications.length,
+      data: applications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching employer applications',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get notifications for user
+// @route   GET /api/notifications
+// @access  Private
+exports.getNotifications = async (req, res) => {
+  try {
+    const notifications = await Notification.find({ user: req.user.id })
+      .populate('relatedJob', 'title company')
+      .populate('relatedApplication', 'status')
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: notifications.length,
+      data: notifications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching notifications',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Mark notification as read
+// @route   PUT /api/notifications/:id/read
+// @access  Private
+exports.markNotificationAsRead = async (req, res) => {
+  try {
+    const notification = await Notification.findById(req.params.id);
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    if (notification.user.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    notification.read = true;
+    await notification.save();
+
+    res.status(200).json({
+      success: true,
+      data: notification
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating notification',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Create notification
+// @route   POST /api/notifications
+// @access  Private
+exports.createNotification = async (req, res) => {
+  try {
+    const { title, message, type, relatedApplication, relatedJob } = req.body;
+
+    const notification = await Notification.create({
+      user: req.user.id,
+      title,
+      message,
+      type,
+      relatedApplication,
+      relatedJob
+    });
+
+    res.status(201).json({
+      success: true,
+      data: notification
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error creating notification',
       error: error.message
     });
   }

@@ -52,6 +52,9 @@ const userSchema = new mongoose.Schema({
   interests: [{
     type: String
   }],
+  jobTypes: [{
+    type: String
+  }],
   program: {
     type: String,
     trim: true

@@ -147,13 +147,14 @@ exports.updateProfile = async (req, res, next) => {
 // @access  Private
 exports.completeOnboarding = async (req, res, next) => {
   try {
-    const { program, cgpa, jobTypes, skills, interests } = req.body;
+    const { program, cgpa, skills, interests, jobTypes } = req.body;
 
     const updateData = {
       program,
       cgpa,
-      skills,
-      interests,
+      skills: skills ? JSON.parse(skills) : [],
+      interests: interests ? JSON.parse(interests) : [],
+      jobTypes: jobTypes ? JSON.parse(jobTypes) : [],
       profileCompleted: true
     };
 
