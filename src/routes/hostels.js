@@ -23,6 +23,6 @@ router.route('/:id')
   .put(protect, authorize('hostel-admin'), upload.array('photos', 10), updateHostel)
   .delete(protect, authorize('hostel-admin'), deleteHostel);
 
-router.post('/:id/rooms', protect, authorize('hostel-admin'), addRoom);
+router.post('/:id/rooms', protect, authorize('hostel-admin'), upload.array('photos', 10), addRoom);
 
 module.exports = router;

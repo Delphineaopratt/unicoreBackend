@@ -484,7 +484,7 @@ exports.getMyApplications = async (req, res) => {
 };
 
 // @desc    Get notifications for user
-// @route   GET /api/notifications
+// @route   GET /api/jobs/notifications
 // @access  Private
 exports.getNotifications = async (req, res) => {
   try {
@@ -508,7 +508,7 @@ exports.getNotifications = async (req, res) => {
 };
 
 // @desc    Mark notification as read
-// @route   PUT /api/notifications/:id/read
+// @route   PUT /api/jobs/notifications/:id/read
 // @access  Private
 exports.markNotificationAsRead = async (req, res) => {
   try {
@@ -545,7 +545,7 @@ exports.markNotificationAsRead = async (req, res) => {
 };
 
 // @desc    Create notification
-// @route   POST /api/notifications
+// @route   POST /api/jobs/notifications
 // @access  Private
 exports.createNotification = async (req, res) => {
   try {

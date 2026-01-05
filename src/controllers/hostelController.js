@@ -184,6 +184,13 @@ exports.getMyHostels = async (req, res) => {
 // @access  Private (hostel-admin)
 exports.addRoom = async (req, res) => {
   try {
+    console.log('Add room request:', {
+      params: req.params,
+      body: req.body,
+      files: req.files ? req.files.length : 0,
+      user: req.user ? req.user.id : 'no user'
+    });
+
     const hostel = await Hostel.findById(req.params.id);
 
     if (!hostel) {
@@ -201,14 +208,34 @@ exports.addRoom = async (req, res) => {
       });
     }
 
-    hostel.rooms.push(req.body);
+    // Prepare room data
+    const roomData = {
+      name: req.body.name,
+      type: req.body.type,
+      amenities: req.body.amenities ? JSON.parse(req.body.amenities) : [],
+      price: parseFloat(req.body.price),
+      availableRooms: parseInt(req.body.availableRooms) || 0,
+    };
+
+    console.log('Room data prepared:', roomData);
+
+    // Handle file uploads if present
+    if (req.files && req.files.length > 0) {
+      roomData.photos = req.files.map(file => `/uploads/${file.filename}`);
+      console.log('Photos added:', roomData.photos);
+    }
+
+    hostel.rooms.push(roomData);
     await hostel.save();
+
+    console.log('Room added successfully');
 
     res.status(201).json({
       success: true,
       data: hostel
     });
   } catch (error) {
+    console.error('Error adding room:', error);
     res.status(500).json({
       success: false,
       message: 'Error adding room',
