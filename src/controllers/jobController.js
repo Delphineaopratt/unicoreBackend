@@ -408,6 +408,29 @@ exports.getMyJobs = async (req, res) => {
   }
 };
 
+// @desc    Get my jobs (employer)
+// @route   GET /api/jobs/my-jobs
+// @access  Private (employer)
+exports.getMyJobs = async (req, res) => {
+  try {
+    const jobs = await Job.find({ employer: req.user.id })
+      .populate('employer', 'name company')
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: jobs.length,
+      data: jobs
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching my jobs',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Get all applications for employer's jobs
 // @route   GET /api/jobs/applications/employer
 // @access  Private (employer)
@@ -432,6 +455,29 @@ exports.getEmployerApplications = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching employer applications',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get my applications (student)
+// @route   GET /api/jobs/applications/me
+// @access  Private (student)
+exports.getMyApplications = async (req, res) => {
+  try {
+    const applications = await JobApplication.find({ student: req.user.id })
+      .populate('job', 'title company location type salary')
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: applications.length,
+      data: applications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching my applications',
       error: error.message
     });
   }
