@@ -38,8 +38,10 @@ app.use(cors({
   credentials: true
 }));
 
-// Security headers
-app.use(helmet());
+// Security headers - configure helmet to allow images
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // Dev logging middleware
 if (process.env.NODE_ENV === 'development') {
@@ -49,8 +51,8 @@ if (process.env.NODE_ENV === 'development') {
 // Compression middleware
 app.use(compression());
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Serve uploaded files with CORS headers
+app.use('/uploads', cors(), express.static(path.join(__dirname, '../uploads')));
 
 // Mount routers
 app.use('/api/auth', authRoutes);
