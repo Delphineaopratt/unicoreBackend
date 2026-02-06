@@ -7,7 +7,9 @@ const {
   updateHostel,
   deleteHostel,
   getMyHostels,
-  addRoom
+  addRoom,
+  updateRoom,
+  deleteRoom
 } = require('../controllers/hostelController');
 const { protect, authorize } = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -24,5 +26,9 @@ router.route('/:id')
   .delete(protect, authorize('hostel-admin'), deleteHostel);
 
 router.post('/:id/rooms', protect, authorize('hostel-admin'), upload.array('photos', 10), addRoom);
+
+router.route('/:id/rooms/:roomId')
+  .put(protect, authorize('hostel-admin'), updateRoom)
+  .delete(protect, authorize('hostel-admin'), deleteRoom);
 
 module.exports = router;

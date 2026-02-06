@@ -243,3 +243,107 @@ exports.addRoom = async (req, res) => {
     });
   }
 };
+
+// @desc    Update room
+// @route   PUT /api/hostels/:id/rooms/:roomId
+// @access  Private (hostel-admin - own hostel only)
+exports.updateRoom = async (req, res) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+
+    if (!hostel) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hostel not found'
+      });
+    }
+
+    // Check if user is hostel admin
+    if (hostel.adminId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update rooms in this hostel'
+      });
+    }
+
+    // Find room by ID
+    const room = hostel.rooms.id(req.params.roomId);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    // Update room fields
+    if (req.body.name) room.name = req.body.name;
+    if (req.body.type) room.type = req.body.type;
+    if (req.body.amenities) room.amenities = req.body.amenities;
+    if (req.body.price) room.price = parseFloat(req.body.price);
+    if (req.body.availableRooms !== undefined) room.availableRooms = parseInt(req.body.availableRooms);
+
+    await hostel.save();
+
+    res.status(200).json({
+      success: true,
+      data: hostel
+    });
+  } catch (error) {
+    console.error('Error updating room:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating room',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Delete room
+// @route   DELETE /api/hostels/:id/rooms/:roomId
+// @access  Private (hostel-admin - own hostel only)
+exports.deleteRoom = async (req, res) => {
+  try {
+    const hostel = await Hostel.findById(req.params.id);
+
+    if (!hostel) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hostel not found'
+      });
+    }
+
+    // Check if user is hostel admin
+    if (hostel.adminId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete rooms from this hostel'
+      });
+    }
+
+    // Find and remove room
+    const room = hostel.rooms.id(req.params.roomId);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    room.remove();
+    await hostel.save();
+
+    res.status(200).json({
+      success: true,
+      data: hostel
+    });
+  } catch (error) {
+    console.error('Error deleting room:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting room',
+      error: error.message
+    });
+  }
+};
