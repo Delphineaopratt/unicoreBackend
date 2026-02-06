@@ -39,6 +39,16 @@ const hostelSchema = new mongoose.Schema({
     required: [true, 'Location is required'],
     trim: true
   },
+  coordinates: {
+    latitude: {
+      type: Number,
+      required: false
+    },
+    longitude: {
+      type: Number,
+      required: false
+    }
+  },
   description: {
     type: String,
     required: [true, 'Description is required']
