@@ -18,6 +18,7 @@ const authRoutes = require('./routes/auth');
 const hostelRoutes = require('./routes/hostels');
 const bookingRoutes = require('./routes/bookings');
 const jobRoutes = require('./routes/jobs');
+const jobPreferenceRoutes = require('./routes/jobPreferences');
 
 // Error handler
 const errorHandler = require('./middleware/errorHandler');
@@ -59,6 +60,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/hostels', hostelRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/job-preferences', jobPreferenceRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
