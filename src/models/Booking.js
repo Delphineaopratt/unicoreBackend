@@ -53,6 +53,14 @@ const bookingSchema = new mongoose.Schema({
     enum: ['mobile-money', 'card', 'cash'],
     default: 'mobile-money'
   },
+  paystackReference: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  paystackCustomerId: {
+    type: String
+  },
   notes: {
     type: String
   }
