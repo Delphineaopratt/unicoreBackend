@@ -193,24 +193,36 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
-    // Handle resume upload
-    if (!req.file) {
+    // Handle resume upload (required)
+    if (!req.files || !req.files.resume || !req.files.resume[0]) {
       return res.status(400).json({
         success: false,
         message: 'Please upload your resume'
       });
     }
 
-    const application = await JobApplication.create({
+    // Build application object
+    const applicationData = {
       student: req.user.id,
       job: req.params.id,
       coverLetter: req.body.coverLetter,
       address: req.body.address,
       resume: {
-        url: `/uploads/${req.file.filename}`,
-        filename: req.file.originalname
+        url: `/uploads/${req.files.resume[0].filename}`,
+        filename: req.files.resume[0].originalname
       }
-    });
+    };
+
+    // Handle transcript upload (optional)
+    if (req.files && req.files.transcript && req.files.transcript[0]) {
+      const transcriptFile = req.files.transcript[0];
+      applicationData.transcript = {
+        url: `/uploads/${transcriptFile.filename}`,
+        filename: transcriptFile.originalname
+      };
+    }
+
+    const application = await JobApplication.create(applicationData);
 
     // Update applications count
     job.applicationsCount += 1;
@@ -443,7 +455,14 @@ exports.getEmployerApplications = async (req, res) => {
     // Get all applications for these jobs
     const applications = await JobApplication.find({ job: { $in: jobIds } })
       .populate('job', 'title company location type')
-      .populate('student', 'name email phone program cgpa skills')
+      .populate({
+        path: 'student',
+        select: 'name email phone program cgpa skills school',
+        populate: {
+          path: 'school',
+          select: 'name email address'
+        }
+      })
       .sort('-createdAt');
 
     res.status(200).json({
@@ -455,6 +474,45 @@ exports.getEmployerApplications = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching employer applications',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get shortlisted candidates (employer)
+// @route   GET /api/jobs/candidates/shortlisted
+// @access  Private (employer)
+exports.getShortlistedCandidates = async (req, res) => {
+  try {
+    // Find all jobs by this employer
+    const jobs = await Job.find({ employer: req.user.id }).select('_id');
+    const jobIds = jobs.map(job => job._id);
+
+    // Get all shortlisted applications for these jobs
+    const candidates = await JobApplication.find({ 
+      job: { $in: jobIds },
+      status: 'shortlisted'
+    })
+      .populate('job', 'title company location type')
+      .populate({
+        path: 'student',
+        select: 'name email phone program cgpa skills school',
+        populate: {
+          path: 'school',
+          select: 'name email address'
+        }
+      })
+      .sort('-createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: candidates.length,
+      data: candidates
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching shortlisted candidates',
       error: error.message
     });
   }
@@ -568,6 +626,216 @@ exports.createNotification = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error creating notification',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Verify transcript by sending email to school
+// @route   POST /api/jobs/applications/:id/verify-transcript
+// @access  Private (employer)
+exports.verifyTranscript = async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    const application = await JobApplication.findById(req.params.id)
+      .populate({
+        path: 'student',
+        select: 'name email school studentId transcript schoolEmail schoolName schoolAddress',
+        populate: {
+          path: 'school',
+          select: 'name email address'
+        }
+      })
+      .populate({
+        path: 'job',
+        select: 'title company',
+        populate: {
+          path: 'employer',
+          select: 'name email company'
+        }
+      });
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: 'Application not found'
+      });
+    }
+
+    const student = application.student;
+    const employer = application.job?.employer || req.user;
+    const employerEmail = employer?.email;
+    const employerName = employer?.name;
+    const companyName = application.job?.company || employer?.company;
+    const schoolEmail = student.school?.email || student.schoolEmail;
+    const schoolName = student.school?.name || student.schoolName;
+    const studentId = student.studentId;
+    const transcriptSource = application.transcript?.url ? application.transcript : student.transcript;
+
+    if (!employerEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employer email not found'
+      });
+    }
+
+    if (!schoolEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student has not provided school email address'
+      });
+    }
+
+    if (!transcriptSource || !transcriptSource.url) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student has not uploaded a transcript'
+      });
+    }
+
+    // Update application with verification request timestamp
+    application.transcriptVerificationStatus = 'pending';
+    application.transcriptVerificationRequestSentAt = new Date();
+    await application.save();
+
+    // Prepare verification email
+    const verificationEmail = {
+      to: schoolEmail,
+      subject: `Education Verification Request: ${student.name} - ${studentId || 'No ID'}`,
+      text: `
+Dear Academic Affairs Officer,
+
+${companyName || 'Our Company'} is considering ${student.name} for employment. We wish to verify the attached transcript. 
+
+STUDENT INFORMATION:
+- Full Name: ${student.name}
+- Student ID: ${studentId || 'Not provided'}
+- School/University: ${schoolName || 'Not specified'}
+
+Please find the attached consent letter from the candidate as required by your policy. The student's transcript is also attached for cross-reference.
+
+We request confirmation that:
+1. The student exists in your records
+2. The grades/CGPA match your permanent records
+3. Notification of any discrepancies if found
+
+We appreciate your timely response to facilitate the hiring process.
+
+Best regards,
+${employerName || 'Recruitment Department'}
+${companyName || 'Recruiting Company'}
+${employerEmail}
+`,
+      html: `
+<h2>Education Verification Request</h2>
+<p>Dear Academic Affairs Officer,</p>
+<p><strong>${companyName || 'Our Company'}</strong> is considering <strong>${student.name}</strong> for employment. We wish to verify the attached transcript.</p>
+
+<h3>STUDENT INFORMATION:</h3>
+<ul>
+  <li><strong>Full Name:</strong> ${student.name}</li>
+  <li><strong>Student ID:</strong> ${studentId || 'Not provided'}</li>
+  <li><strong>School/University:</strong> ${schoolName || 'Not specified'}</li>
+</ul>
+
+<p>Please find the attached consent letter from the candidate as required by your policy. The student's transcript is also attached for cross-reference.</p>
+
+<h3>We request confirmation that:</h3>
+<ol>
+  <li>The student exists in your records</li>
+  <li>The grades/CGPA match your permanent records</li>
+  <li>Notification of any discrepancies if found</li>
+</ol>
+
+<p>We appreciate your timely response to facilitate the hiring process.</p>
+
+<p>Best regards,<br>
+<strong>${employerName || 'Recruitment Department'}</strong><br>
+${companyName || 'Recruiting Company'}<br>
+<a href="mailto:${employerEmail}">${employerEmail}</a></p>
+      `
+    };
+
+    // Send verification email using nodemailer (if configured)
+    let emailSent = false;
+    try {
+      if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+        const nodemailer = require('nodemailer');
+        
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT) || 587,
+          secure: process.env.EMAIL_SECURE === 'true',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD
+          }
+        });
+
+        // Prepare attachments
+        const attachments = [];
+        
+        // Add transcript if it exists
+        if (transcriptSource?.url) {
+          const transcriptRelativePath = transcriptSource.url.replace(/^\/+/, '');
+          const transcriptPath = path.resolve(__dirname, '../../', transcriptRelativePath);
+          try {
+            if (fs.existsSync(transcriptPath)) {
+              attachments.push({
+                filename: transcriptSource.filename || 'transcript.pdf',
+                path: transcriptPath
+              });
+            } else {
+              console.error('Transcript file not found at path:', transcriptPath);
+            }
+          } catch (attachmentError) {
+            console.error('Error attaching transcript:', attachmentError.message);
+          }
+        }
+
+        const emailOptions = {
+          from: `${employerName || companyName} <${employerEmail}>`,
+          replyTo: employerEmail,
+          ...verificationEmail,
+          attachments: attachments
+        };
+
+        await transporter.sendMail(emailOptions);
+        emailSent = true;
+      }
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError.message);
+      // Don't fail the entire request, just note that email wasn't sent
+    }
+
+    // Log the verification request
+    try {
+      await Notification.create({
+        user: req.user.id,
+        title: 'Transcript Verification Initiated',
+        message: `Transcript verification request sent to ${schoolName} (${schoolEmail}) for ${student.name} (ID: ${studentId || 'Not provided'})`,
+        type: 'verification',
+        relatedApplication: application._id
+      });
+    } catch (notificationError) {
+      console.error('Notification creation failed:', notificationError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: emailSent 
+        ? `Transcript verification email sent to ${schoolEmail}` 
+        : `Transcript verification request recorded. Email sending is not configured.`,
+      emailSent: emailSent,
+      verificationStatus: 'pending'
+    });
+  } catch (error) {
+    console.error('Error in verifyTranscript:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing transcript verification',
       error: error.message
     });
   }

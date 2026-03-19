@@ -114,6 +114,7 @@ exports.updateProfile = async (req, res, next) => {
       skills: req.body.skills,
       interests: req.body.interests,
       program: req.body.program,
+      studentId: req.body.studentId,
       cgpa: req.body.cgpa,
       experience: req.body.experience,
       education: req.body.education
@@ -147,11 +148,12 @@ exports.updateProfile = async (req, res, next) => {
 // @access  Private
 exports.completeOnboarding = async (req, res, next) => {
   try {
-    const { program, cgpa, skills, interests, jobTypes } = req.body;
+    const { program, cgpa, studentId, skills, interests, jobTypes } = req.body;
 
     const updateData = {
       program,
       cgpa,
+      studentId,
       skills: skills ? JSON.parse(skills) : [],
       interests: interests ? JSON.parse(interests) : [],
       jobTypes: jobTypes ? JSON.parse(jobTypes) : [],

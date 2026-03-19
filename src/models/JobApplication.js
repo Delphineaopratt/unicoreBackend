@@ -26,6 +26,14 @@ const jobApplicationSchema = new mongoose.Schema({
       required: true
     }
   },
+  transcript: {
+    url: {
+      type: String
+    },
+    filename: {
+      type: String
+    }
+  },
   address: {
     type: String,
     required: true,
@@ -35,6 +43,22 @@ const jobApplicationSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'reviewed', 'shortlisted', 'rejected', 'accepted'],
     default: 'pending'
+  },
+  transcriptVerificationStatus: {
+    type: String,
+    enum: ['not_requested', 'pending', 'verified', 'discrepancy', 'denied'],
+    default: 'not_requested'
+  },
+  transcriptVerificationRequestSentAt: {
+    type: Date
+  },
+  transcriptVerificationResponse: {
+    status: {
+      type: String,
+      enum: ['confirmation', 'discrepancy', 'denial']
+    },
+    message: String,
+    respondedAt: Date
   },
   employerNotes: {
     type: String

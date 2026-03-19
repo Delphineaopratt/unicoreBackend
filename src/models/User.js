@@ -59,9 +59,32 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  studentId: {
+    type: String,
+    trim: true,
+    sparse: true
+  },
+  schoolName: {
+    type: String,
+    trim: true
+  },
+  schoolEmail: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid school email']
+  },
+  schoolAddress: {
+    type: String,
+    trim: true
+  },
   cgpa: {
     type: String,
     trim: true
+  },
+  school: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'School'
   },
   transcript: {
     url: String,
