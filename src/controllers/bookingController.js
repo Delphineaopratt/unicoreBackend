@@ -18,6 +18,39 @@ exports.createBooking = async (req, res) => {
       });
     }
 
+    const requestedRoomId = req.body?.room?.roomId;
+    if (!requestedRoomId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Room is required for booking'
+      });
+    }
+
+    const selectedRoom = hostel.rooms.id(requestedRoomId);
+    if (!selectedRoom) {
+      return res.status(404).json({
+        success: false,
+        message: 'Selected room not found in this hostel'
+      });
+    }
+
+    const semesterCount = Number(req.body.semesterCount || 1);
+    if (![1, 2].includes(semesterCount)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Semester option must be 1 or 2'
+      });
+    }
+
+    // Always use uploaded room price with semester-based multiplier.
+    req.body.room = {
+      ...req.body.room,
+      roomId: selectedRoom._id.toString(),
+      name: selectedRoom.name,
+      price: selectedRoom.price
+    };
+    req.body.totalAmount = selectedRoom.price * semesterCount;
+
     const booking = await Booking.create(req.body);
 
     // Populate the booking
@@ -66,7 +99,7 @@ exports.getMyBookings = async (req, res) => {
 exports.getBookingById = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
-      .populate('hostel', 'name location photos contact')
+      .populate('hostel', 'name location photos contact adminId')
       .populate('student', 'name email phone');
 
     if (!booking) {
@@ -77,7 +110,14 @@ exports.getBookingById = async (req, res) => {
     }
 
     // Check authorization
-    if (booking.student._id.toString() !== req.user.id && req.user.userType !== 'hostel-admin') {
+    const isStudentOwner = booking.student._id.toString() === req.user.id;
+    const isHostelAdminOwner =
+      req.user.userType === 'hostel-admin' &&
+      booking.hostel &&
+      booking.hostel.adminId &&
+      booking.hostel.adminId.toString() === req.user.id;
+
+    if (!isStudentOwner && !isHostelAdminOwner) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this booking'

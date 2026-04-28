@@ -361,7 +361,9 @@ exports.updateApplicationStatus = async (req, res) => {
   try {
     const { status, employerNotes } = req.body;
 
-    const application = await JobApplication.findById(req.params.id).populate('job');
+    const application = await JobApplication.findById(req.params.id)
+      .populate('job', 'title company employer')
+      .populate('student', 'name email');
 
     if (!application) {
       return res.status(404).json({
@@ -378,15 +380,79 @@ exports.updateApplicationStatus = async (req, res) => {
       });
     }
 
+    const previousStatus = application.status;
+
     application.status = status;
     if (employerNotes) application.employerNotes = employerNotes;
     application.reviewedAt = Date.now();
     
     await application.save();
 
+    let shortlistEmailSent = false;
+
+    // On first transition to shortlisted, notify student in-app and by email.
+    if (status === 'shortlisted' && previousStatus !== 'shortlisted') {
+      const companyName = application.job?.company || 'the company';
+      const studentName = application.student?.name || 'Student';
+      const studentEmail = application.student?.email;
+      const jobTitle = application.job?.title || 'the role';
+      const employerEmail = req.user?.email;
+      const fromEmail = employerEmail || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+      await Notification.create({
+        user: application.student._id,
+        title: 'Application Shortlisted',
+        message: `Congratulations! You have been shortlisted by ${companyName} for ${jobTitle}. The company will contact you soon.`,
+        type: 'status_update',
+        relatedApplication: application._id,
+        relatedJob: application.job?._id
+      });
+
+      try {
+        if (
+          studentEmail &&
+          process.env.EMAIL_HOST &&
+          process.env.EMAIL_USER &&
+          process.env.EMAIL_PASSWORD
+        ) {
+          const nodemailer = require('nodemailer');
+
+          const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: parseInt(process.env.EMAIL_PORT, 10) || 587,
+            secure: process.env.EMAIL_SECURE === 'true',
+            auth: {
+              user: process.env.EMAIL_USER,
+              pass: process.env.EMAIL_PASSWORD
+            }
+          });
+
+          await transporter.sendMail({
+            from: `${companyName} <${fromEmail}>`,
+            replyTo: employerEmail || fromEmail,
+            to: studentEmail,
+            subject: `Congratulations! You are shortlisted by ${companyName}`,
+            text: `Hi ${studentName},\n\nGreat news! You have been shortlisted by ${companyName} for ${jobTitle}.\n\nThe company will contact you soon with next steps.\n\nBest regards,\nUniCore Team`,
+            html: `
+              <p>Hi ${studentName},</p>
+              <p><strong>Congratulations!</strong> You have been shortlisted by <strong>${companyName}</strong> for <strong>${jobTitle}</strong>.</p>
+              <p>The company will contact you soon with next steps.</p>
+              <p>Best regards,<br/>UniCore Team</p>
+            `
+          });
+
+          shortlistEmailSent = true;
+        }
+      } catch (emailError) {
+        // Email failure should not fail the status update or notification.
+        console.error('Shortlist email sending failed:', emailError.message);
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: application
+      data: application,
+      shortlistEmailSent
     });
   } catch (error) {
     res.status(500).json({
@@ -452,18 +518,36 @@ exports.getEmployerApplications = async (req, res) => {
     const jobs = await Job.find({ employer: req.user.id }).select('_id');
     const jobIds = jobs.map(job => job._id);
 
-    // Get all applications for these jobs
-    const applications = await JobApplication.find({ job: { $in: jobIds } })
-      .populate('job', 'title company location type')
-      .populate({
-        path: 'student',
-        select: 'name email phone program cgpa skills school',
-        populate: {
-          path: 'school',
-          select: 'name email address'
-        }
-      })
-      .sort('-createdAt');
+    if (jobIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
+
+    let applications;
+
+    try {
+      // Preferred query with nested school data
+      applications = await JobApplication.find({ job: { $in: jobIds } })
+        .populate('job', 'title company location type')
+        .populate({
+          path: 'student',
+          select: 'name email phone program cgpa skills school schoolName schoolEmail schoolAddress',
+          populate: {
+            path: 'school',
+            select: 'name email address'
+          }
+        })
+        .sort('-createdAt');
+    } catch (populateError) {
+      // Fallback for legacy/inconsistent reference data
+      applications = await JobApplication.find({ job: { $in: jobIds } })
+        .populate('job', 'title company location type')
+        .populate('student', 'name email phone program cgpa skills schoolName schoolEmail schoolAddress')
+        .sort('-createdAt');
+    }
 
     res.status(200).json({
       success: true,
@@ -488,21 +572,42 @@ exports.getShortlistedCandidates = async (req, res) => {
     const jobs = await Job.find({ employer: req.user.id }).select('_id');
     const jobIds = jobs.map(job => job._id);
 
-    // Get all shortlisted applications for these jobs
-    const candidates = await JobApplication.find({ 
-      job: { $in: jobIds },
-      status: 'shortlisted'
-    })
-      .populate('job', 'title company location type')
-      .populate({
-        path: 'student',
-        select: 'name email phone program cgpa skills school',
-        populate: {
-          path: 'school',
-          select: 'name email address'
-        }
+    if (jobIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
+
+    let candidates;
+
+    try {
+      // Preferred query with nested school data
+      candidates = await JobApplication.find({ 
+        job: { $in: jobIds },
+        status: 'shortlisted'
       })
-      .sort('-createdAt');
+        .populate('job', 'title company location type')
+        .populate({
+          path: 'student',
+          select: 'name email phone program cgpa skills school schoolName schoolEmail schoolAddress',
+          populate: {
+            path: 'school',
+            select: 'name email address'
+          }
+        })
+        .sort('-createdAt');
+    } catch (populateError) {
+      // Fallback for legacy/inconsistent reference data
+      candidates = await JobApplication.find({ 
+        job: { $in: jobIds },
+        status: 'shortlisted'
+      })
+        .populate('job', 'title company location type')
+        .populate('student', 'name email phone program cgpa skills schoolName schoolEmail schoolAddress')
+        .sort('-createdAt');
+    }
 
     res.status(200).json({
       success: true,

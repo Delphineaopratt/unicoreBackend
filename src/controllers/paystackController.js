@@ -39,6 +39,67 @@ const normalizeAmountToSubunit = (amount) => {
   return subunit;
 };
 
+const sendBookingPaidConfirmationEmail = async (booking) => {
+  if (
+    !process.env.EMAIL_HOST ||
+    !process.env.EMAIL_USER ||
+    !process.env.EMAIL_PASSWORD
+  ) {
+    return false;
+  }
+
+  const studentEmail = booking?.student?.email;
+  if (!isValidEmail(studentEmail)) {
+    return false;
+  }
+
+  const hostelName = booking?.hostel?.name || 'the hostel';
+  const studentName = booking?.student?.name || 'Student';
+  const roomName = booking?.room?.name || 'your selected room';
+
+  let adminEmail = booking?.hostel?.contact?.email;
+  if (!adminEmail && booking?.hostel?.adminId) {
+    const adminId =
+      typeof booking.hostel.adminId === 'object'
+        ? booking.hostel.adminId._id
+        : booking.hostel.adminId;
+
+    if (adminId) {
+      const adminUser = await User.findById(adminId).select('email');
+      adminEmail = adminUser?.email;
+    }
+  }
+
+  const fromEmail = adminEmail || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+  const nodemailer = require('nodemailer');
+  const transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT, 10) || 587,
+    secure: process.env.EMAIL_SECURE === 'true',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    }
+  });
+
+  await transporter.sendMail({
+    from: `${hostelName} <${fromEmail}>`,
+    replyTo: adminEmail || fromEmail,
+    to: studentEmail,
+    subject: `Booking Confirmed: ${hostelName}`,
+    text: `Hi ${studentName},\n\nYour booking payment has been confirmed for ${roomName} at ${hostelName}.\n\nYour reservation is now active. The hostel administrator will contact you if any additional details are required.\n\nBest regards,\n${hostelName}`,
+    html: `
+      <p>Hi ${studentName},</p>
+      <p>Your booking payment has been <strong>confirmed</strong> for <strong>${roomName}</strong> at <strong>${hostelName}</strong>.</p>
+      <p>Your reservation is now active. The hostel administrator will contact you if any additional details are required.</p>
+      <p>Best regards,<br/>${hostelName}</p>
+    `
+  });
+
+  return true;
+};
+
 // @desc    Get Paystack public key
 // @route   GET /api/payments/public-key
 // @access  Public
@@ -253,12 +314,23 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
+    const wasAlreadyPaid = booking.paymentStatus === 'paid';
+
     // Update booking status
     booking.paymentStatus = 'paid';
     booking.status = 'confirmed';
     booking.paymentMethod = 'card';
     booking.paystackCustomerId = paymentData.customer.customer_code;
     await booking.save();
+
+    let confirmationEmailSent = false;
+    if (!wasAlreadyPaid) {
+      try {
+        confirmationEmailSent = await sendBookingPaidConfirmationEmail(booking);
+      } catch (emailError) {
+        console.error('Booking confirmation email sending failed:', emailError.message);
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -273,7 +345,8 @@ exports.verifyPayment = async (req, res) => {
         hostel: booking.hostel.name,
         room: booking.room.name,
         checkInDate: booking.checkInDate,
-        checkOutDate: booking.checkOutDate
+        checkOutDate: booking.checkOutDate,
+        confirmationEmailSent
       }
     });
   } catch (error) {
@@ -310,7 +383,9 @@ exports.handleWebhook = async (req, res) => {
 
     if (event.event === 'charge.success') {
       const reference = event.data.reference;
-      const booking = await Booking.findOne({ paystackReference: reference });
+      const booking = await Booking.findOne({ paystackReference: reference })
+        .populate('student')
+        .populate('hostel');
 
       if (booking && booking.paymentStatus !== 'paid') {
         booking.paymentStatus = 'paid';
@@ -318,6 +393,12 @@ exports.handleWebhook = async (req, res) => {
         booking.paymentMethod = 'card';
         booking.paystackCustomerId = event.data.customer.customer_code;
         await booking.save();
+
+        try {
+          await sendBookingPaidConfirmationEmail(booking);
+        } catch (emailError) {
+          console.error('Booking confirmation email sending failed:', emailError.message);
+        }
 
         console.log(`Payment confirmed for booking ${booking._id} via webhook`);
       }
