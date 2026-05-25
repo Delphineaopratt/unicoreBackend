@@ -113,9 +113,13 @@ exports.updateProfile = async (req, res, next) => {
       bio: req.body.bio,
       skills: req.body.skills,
       interests: req.body.interests,
+      jobTypes: req.body.jobTypes,
       program: req.body.program,
       studentId: req.body.studentId,
       cgpa: req.body.cgpa,
+      schoolName: req.body.school?.name || req.body.schoolName,
+      schoolEmail: req.body.school?.email || req.body.schoolEmail,
+      schoolAddress: req.body.school?.address || req.body.schoolAddress,
       experience: req.body.experience,
       education: req.body.education
     };

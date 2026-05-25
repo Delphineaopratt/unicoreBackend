@@ -54,13 +54,30 @@ exports.saveJobPreferences = async (req, res) => {
 exports.getJobPreferences = async (req, res) => {
   try {
     const userId = req.user.id;
-    const preferences = await JobPreference.findOne({ userId });
+    let preferences = await JobPreference.findOne({ userId });
 
+    // If no JobPreference document, fall back to the user's profile fields
     if (!preferences) {
-      return res.status(404).json({
-        success: false,
-        message: 'No preferences found'
-      });
+      const User = require('../models/User');
+      const user = await User.findById(userId).lean();
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'No preferences found'
+        });
+      }
+
+      // Build a preferences-like object from the user profile
+      preferences = {
+        userId: user._id,
+        program: user.program || '',
+        cgpa: user.cgpa || '',
+        jobTypes: user.jobTypes || [],
+        skills: user.skills || [],
+        interests: user.interests || [],
+        transcript: (user.transcript && (user.transcript.url || user.transcript.filename)) || '',
+        isCompleted: !!user.profileCompleted
+      };
     }
 
     res.status(200).json({
@@ -114,13 +131,28 @@ exports.getRecommendedJobs = async (req, res) => {
     const userId = req.user.id;
     const Job = require('../models/Job');
     
-    const preferences = await JobPreference.findOne({ userId });
+    let preferences = await JobPreference.findOne({ userId });
 
+    // If no JobPreference or not completed, fall back to user profile
     if (!preferences || !preferences.isCompleted) {
-      return res.status(404).json({
-        success: false,
-        message: 'Please complete job preferences first'
-      });
+      const User = require('../models/User');
+      const user = await User.findById(userId).lean();
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Please complete your profile first'
+        });
+      }
+
+      preferences = {
+        program: user.program || '',
+        cgpa: user.cgpa || '',
+        jobTypes: user.jobTypes || [],
+        skills: user.skills || [],
+        interests: user.interests || [],
+        transcript: (user.transcript && (user.transcript.url || user.transcript.filename)) || '',
+        isCompleted: !!user.profileCompleted
+      };
     }
 
     // Build query to find matching jobs
